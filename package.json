@@ -1,0 +1,35 @@
+{
+  "name": "bus-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Inter-regional bus transport management and ticketing platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build -w @bus/types -w @bus/config -w @bus/events -w @bus/shared",
+    "build:services": "npm run build -w @bus/api -w @bus/notification-service -w @bus/sms-service -w @bus/audit-service -w @bus/tracking-service -w @bus/payment-service -w @bus/scheduler-service -w @bus/reporting-service",
+    "build:frontend": "npm run build -w @bus/frontend",
+    "build": "npm run build:packages && npm run build:services && npm run build:frontend",
+    "lint": "eslint \"apps/*/src/**/*.ts\" \"apps/*/test/**/*.ts\" \"packages/*/src/**/*.ts\"",
+    "test": "npm run test -w @bus/api -w @bus/sms-service -w @bus/payment-service",
+    "test:integration": "bash scripts/test-integration.sh",
+    "dev:api": "npm run start:dev -w @bus/api",
+    "dev:web": "npm run dev -w @bus/frontend",
+    "migration:run": "npm run migration:run -w @bus/api",
+    "seed": "npm run seed -w @bus/api",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f --tail=100"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
