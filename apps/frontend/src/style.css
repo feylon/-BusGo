@@ -1,0 +1,88 @@
+@layer theme, base, primevue, components, utilities;
+@import 'tailwindcss';
+@import 'primeicons/primeicons.css';
+@import 'leaflet/dist/leaflet.css';
+
+@custom-variant dark (&:where(.app-dark, .app-dark *));
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+}
+
+:root {
+  --app-bg: #f5f7fa;
+  --app-surface: #ffffff;
+  --app-border: #e5e7eb;
+  --app-text: #0f172a;
+  --app-muted: #64748b;
+  --sidebar-bg: #0b1f2a;
+  --sidebar-text: #cbd5e1;
+}
+
+.app-dark {
+  --app-bg: #0b1220;
+  --app-surface: #111827;
+  --app-border: #1f2937;
+  --app-text: #e5e7eb;
+  --app-muted: #94a3b8;
+  --sidebar-bg: #050b14;
+}
+
+html,
+body {
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .card {
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 0.875rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+  .muted {
+    color: var(--app-muted);
+  }
+  .page-title {
+    @apply text-xl font-semibold tracking-tight md:text-2xl;
+  }
+  .field-label {
+    @apply mb-1 block text-sm font-medium;
+    color: var(--app-muted);
+  }
+}
+
+.leaflet-container {
+  font-family: inherit;
+  border-radius: 0.75rem;
+  z-index: 0;
+}
+
+.bus-marker {
+  background: #0f766e;
+  color: #fff;
+  border: 3px solid #fff;
+  border-radius: 9999px;
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bus-marker.offline {
+  background: #94a3b8;
+}
+
+.p-datatable .p-datatable-tbody > tr > td {
+  vertical-align: middle;
+}
