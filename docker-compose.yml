@@ -1,0 +1,216 @@
+name: busline
+
+x-node-service: &node-service
+  restart: unless-stopped
+  networks: [busnet]
+  logging:
+    driver: json-file
+    options: { max-size: '10m', max-file: '3' }
+
+x-common-env: &common-env
+  NODE_ENV: ${NODE_ENV:-production}
+  INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://bus:bus_secret@rabbitmq:5672}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+  TZ: Asia/Tashkent
+
+x-infra-ready: &infra-ready
+  postgres: { condition: service_healthy }
+  redis: { condition: service_healthy }
+  rabbitmq: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bus_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-bus_core}
+      TZ: Asia/Tashkent
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-databases.sql:ro
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-bus} -d ${POSTGRES_DB:-bus_core}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [busnet]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    ports:
+      - '127.0.0.1:${REDIS_HOST_PORT:-6380}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [busnet]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-bus}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-bus_secret}
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    ports:
+      - '127.0.0.1:${RABBITMQ_UI_PORT:-15672}:15672'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_port_connectivity']
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    networks: [busnet]
+
+  notification-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/notification-service/Dockerfile }
+    image: busline/notification-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3101
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL:-postgres://bus:bus_secret@postgres:5432/bus_notification}
+      PUSH_PROVIDER: ${PUSH_PROVIDER:-mock}
+      NOTIFICATION_RETENTION_DAYS: ${NOTIFICATION_RETENTION_DAYS:-90}
+    depends_on: *infra-ready
+
+  sms-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/sms-service/Dockerfile }
+    image: busline/sms-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3102
+      SMS_PROVIDER: ${SMS_PROVIDER:-mock}
+      OTP_SECRET: ${OTP_SECRET:-change-me-otp-secret}
+      OTP_TTL_SEC: ${OTP_TTL_SEC:-120}
+      OTP_RESEND_COOLDOWN_SEC: ${OTP_RESEND_COOLDOWN_SEC:-60}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      OTP_HOURLY_LIMIT: ${OTP_HOURLY_LIMIT:-5}
+      OTP_EXPOSE_CODE: ${OTP_EXPOSE_CODE:-true}
+    depends_on: *infra-ready
+
+  audit-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/audit-service/Dockerfile }
+    image: busline/audit-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3103
+      DATABASE_URL: ${AUDIT_DATABASE_URL:-postgres://bus:bus_secret@postgres:5432/bus_audit}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
+    depends_on: *infra-ready
+
+  tracking-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/tracking-service/Dockerfile }
+    image: busline/tracking-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3104
+      DATABASE_URL: ${TRACKING_DATABASE_URL:-postgres://bus:bus_secret@postgres:5432/bus_tracking}
+      TRACKING_RETENTION_DAYS: ${TRACKING_RETENTION_DAYS:-30}
+    depends_on: *infra-ready
+
+  payment-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/payment-service/Dockerfile }
+    image: busline/payment-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3105
+      DATABASE_URL: ${PAYMENT_DATABASE_URL:-postgres://bus:bus_secret@postgres:5432/bus_payment}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-mock}
+    depends_on: *infra-ready
+
+  reporting-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/reporting-service/Dockerfile }
+    image: busline/reporting-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3107
+      DATABASE_URL: ${REPORTING_DATABASE_URL:-postgres://bus:bus_secret@postgres:5432/bus_reporting}
+    depends_on: *infra-ready
+
+  api:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    image: busline/api:latest
+    environment:
+      <<: *common-env
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-postgres://bus:bus_secret@postgres:5432/bus_core}
+      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-characters}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-30}
+      QR_SECRET: ${QR_SECRET:-change-me-qr-signing-secret}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-300}
+      SEED_ON_START: ${SEED_ON_START:-true}
+      SEED_DAYS: ${SEED_DAYS:-7}
+      NOTIFICATION_SERVICE_URL: http://notification-service:3101
+      SMS_SERVICE_URL: http://sms-service:3102
+      AUDIT_SERVICE_URL: http://audit-service:3103
+      TRACKING_SERVICE_URL: http://tracking-service:3104
+      PAYMENT_SERVICE_URL: http://payment-service:3105
+      SCHEDULER_SERVICE_URL: http://scheduler-service:3106
+      REPORTING_SERVICE_URL: http://reporting-service:3107
+    ports:
+      - '${API_PORT:-3000}:3000'
+    depends_on:
+      <<: *infra-ready
+      notification-service: { condition: service_healthy }
+      sms-service: { condition: service_healthy }
+      audit-service: { condition: service_healthy }
+      tracking-service: { condition: service_healthy }
+      payment-service: { condition: service_healthy }
+      reporting-service: { condition: service_healthy }
+
+  scheduler-service:
+    <<: *node-service
+    build: { context: ., dockerfile: apps/scheduler-service/Dockerfile }
+    image: busline/scheduler-service:latest
+    environment:
+      <<: *common-env
+      PORT: 3106
+      API_URL: http://api:3000
+      PAYMENT_SERVICE_URL: http://payment-service:3105
+      TRACKING_SERVICE_URL: http://tracking-service:3104
+      NOTIFICATION_SERVICE_URL: http://notification-service:3101
+      AUDIT_SERVICE_URL: http://audit-service:3103
+      REPORTING_SERVICE_URL: http://reporting-service:3107
+      SCHEDULER_TZ: Asia/Tashkent
+    depends_on:
+      redis: { condition: service_healthy }
+      api: { condition: service_healthy }
+
+  frontend:
+    build: { context: ., dockerfile: apps/frontend/Dockerfile }
+    image: busline/frontend:latest
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [busnet]
+
+networks:
+  busnet:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitdata:
